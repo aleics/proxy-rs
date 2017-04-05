@@ -2,34 +2,32 @@ use config::Config;
 
 use std::net::SocketAddr;
 
+use url::Url;
+
 use tokio_core::reactor::Core;
 use tokio_core::net::TcpListener;
-use tokio_service::Service;
-use tokio_io;
 
-use futures::future::FutureResult;
+use futures::{future, Future, Stream};
 use futures_cpupool::CpuPool;
 
 use hyper;
-use hyper::{Get, Post};
-use hyper::status::StatusCode;
-use hyper::header::ContentLength;
-use hyper::server::{Request, Response};
+use hyper::{Client, StatusCode, Body};
+use hyper::client::HttpConnector;
+use hyper::server::{Service, Http, Request, Response};
 
-
-#[derive(Debug, Copy, Clone)]
+#[derive(Clone)]
 pub struct Proxy {
-  config: Config,
+  pub config: Config,
   thread_pool: CpuPool
 }
 
 impl Proxy {
-  pub fn new(config_path: &str) -> Proxy {
+  pub fn new(config_path: &str, threads: usize) -> Proxy {
     let config = match Config::read(config_path) {
       Err(err) => panic!("Error: {}", err),
       Ok(c) => c
     };
-    Proxy { config: config }
+    Proxy { config: config, thread_pool:  CpuPool::new(threads) }
   }
 
   pub fn start(&self) {
@@ -45,13 +43,12 @@ impl Proxy {
       Ok(l) => l
     };
 
+    let client = Client::new(&handle);
     let connections = listener.incoming();
-    let server = connections.for_each(|(_socket, _peer_addr)| {
-      // writes on the socket the message returned as a future
-      let serve_one = tokio_io::io::write_all(_socket, b"Hello, world!\n")
-        .then(|_| Ok(()));
-      // handle the connections asynchronously
-      handle.spawn(serve_one);
+    let protocol = Http::new();
+    let server = connections.for_each(|(socket, peer_addr)| {
+      let conn = ConnHandler { routes: self.config.routes.clone(), client: client.clone() };
+      protocol.bind_connection(&handle, socket, peer_addr, conn);
       Ok(())
     });
 
@@ -59,12 +56,28 @@ impl Proxy {
   }
 }
 
-impl Service for Proxy {
-  type Request = Request;
-  type Response = Response;
-  type Error = hyper::Error;
-  type Future = FutureResult<Response, hyper::Error>;
+struct ConnHandler {
+  routes: Vec<Url>,
+  client: Client<HttpConnector, Body>
+}
+
+impl ConnHandler {
+  pub fn contains_route(&self, route: &str) -> bool {
+    let url = match Url::parse(route) {
+      Err(_) => return false,
+      Ok(u) => u
+    };
+    self.routes.contains(&url)
+  }
+}
+
+impl Service for ConnHandler {
+    type Request =  Request;
+    type Response = Response;
+    type Error = hyper::Error;
+    type Future = future::BoxFuture<Self::Response, Self::Error>;
 
   fn call(&self, req: Request) -> Self::Future {
+    future::ok(Response::new().with_status(StatusCode::NotImplemented)).boxed()
   }
 }
