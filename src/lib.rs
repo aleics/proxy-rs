@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate serde_derive;
 extern crate toml;
-extern crate url;
 
 extern crate futures;
 extern crate futures_cpupool;

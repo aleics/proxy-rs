@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::{Error, ErrorKind, Read};
 use std::fs::File;
 
-use url::Url;
+use hyper::Uri;
 use toml;
 
 #[derive(Deserialize, Debug, Clone)]
@@ -19,7 +19,7 @@ pub struct TomlConfig {
 #[derive(Debug, Clone)]
 pub struct Config {
   pub proxy: ProxyConfig,
-  pub routes: Vec<Url>
+  pub routes: Vec<Uri>
 }
 
 impl Config {
@@ -32,13 +32,13 @@ impl Config {
       }).and_then(|contents| {
         toml::from_str(contents.as_str())
           .map_err(|err| Error::new(ErrorKind::InvalidData, err))
-      }).and_then(|config| Config::parse_urls(config))
+      }).and_then(|config| Config::parse_uris(config))
   }
 
-  fn parse_urls(toml_config: TomlConfig) -> Result<Config, Error> {
-    let mut parsed_routes: Vec<Url> = Vec::new();
+  fn parse_uris(toml_config: TomlConfig) -> Result<Config, Error> {
+    let mut parsed_routes: Vec<Uri> = Vec::new();
     for (_, url) in toml_config.routes.iter() {
-      match Url::parse(url) {
+      match url.parse::<Uri>() {
         Err(err) => return Err(Error::new(ErrorKind::InvalidData, err)),
         Ok(u) => parsed_routes.push(u)
       }

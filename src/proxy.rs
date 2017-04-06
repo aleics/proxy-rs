@@ -2,18 +2,16 @@ use config::Config;
 
 use std::net::SocketAddr;
 
-use url::Url;
-
 use tokio_core::reactor::Core;
 use tokio_core::net::TcpListener;
 
-use futures::{future, Future, Stream};
+use futures::{Future, Stream};
 use futures_cpupool::CpuPool;
 
 use hyper;
-use hyper::{Client, StatusCode, Body};
-use hyper::client::HttpConnector;
-use hyper::server::{Service, Http, Request, Response};
+use hyper::Uri;
+use hyper::{Client, Body, client, server};
+use hyper::server::{Service, Http};
 
 #[derive(Clone)]
 pub struct Proxy {
@@ -47,7 +45,8 @@ impl Proxy {
     let connections = listener.incoming();
     let protocol = Http::new();
     let server = connections.for_each(|(socket, peer_addr)| {
-      let conn = ConnHandler { routes: self.config.routes.clone(), client: client.clone() };
+      let conn = ConnHandler { route: self.config.routes[0].clone(), client: client.clone() };
+      // Here the connection needs to be  asynchronous and iterate through all the routes
       protocol.bind_connection(&handle, socket, peer_addr, conn);
       Ok(())
     });
@@ -57,27 +56,36 @@ impl Proxy {
 }
 
 struct ConnHandler {
-  routes: Vec<Url>,
-  client: Client<HttpConnector, Body>
+  route: Uri,
+  client: Client<client::HttpConnector, Body>
 }
 
 impl ConnHandler {
-  pub fn contains_route(&self, route: &str) -> bool {
-    let url = match Url::parse(route) {
-      Err(_) => return false,
-      Ok(u) => u
-    };
-    self.routes.contains(&url)
+  pub fn build_request(&self, req: server::Request) -> client::Request {
+    let (method, _, version, headers, body) = req.deconstruct();
+    let mut request = hyper::client::Request::new(method, self.route.clone());
+    request.set_body(body);
+    request.set_version(version);
+    *request.headers_mut() = headers;
+    request
   }
 }
 
 impl Service for ConnHandler {
-    type Request =  Request;
-    type Response = Response;
+    type Request =  server::Request;
+    type Response = server::Response;
     type Error = hyper::Error;
-    type Future = future::BoxFuture<Self::Response, Self::Error>;
+    type Future = Box<Future<Item=Self::Response, Error=Self::Error>>;
 
-  fn call(&self, req: Request) -> Self::Future {
-    future::ok(Response::new().with_status(StatusCode::NotImplemented)).boxed()
+  fn call(&self, req: server::Request) -> Self::Future {
+    let request = self.build_request(req);
+    let response = self.client.request(request).map(|res| {
+      let mut resp = server::Response::new();
+      resp = resp.with_headers(res.headers().clone());
+      resp.set_status(res.status().clone());
+      resp.set_body(res.body());
+      resp
+    });
+    Box::new(response)
   }
 }
