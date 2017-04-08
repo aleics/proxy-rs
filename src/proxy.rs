@@ -1,16 +1,17 @@
 use config::Config;
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 
 use tokio_core::reactor::Core;
 use tokio_core::net::TcpListener;
 
-use futures::{Future, Stream};
+use futures::{future, Future, Stream};
 use futures_cpupool::CpuPool;
 
 use hyper;
 use hyper::Uri;
-use hyper::{Client, Body, client, server};
+use hyper::{Client, Body, client, server, StatusCode};
 use hyper::server::{Service, Http};
 
 #[derive(Clone)]
@@ -64,20 +65,22 @@ impl Proxy {
 
     // manage connections concurrently as a stream
     let server = connections.for_each(|(socket, peer_addr)| {
-      let conn = ConnHandler { route: self.config.routes[0].clone(), client: client.clone() };
+      let conn = ConnHandler { client: client.clone(), routes: self.config.routes.clone() };
+
+      // bind the connection
       protocol.bind_connection(&handle, socket, peer_addr, conn);
       Ok(())
     });
 
     // run the server
-    core.run(server).unwrap();
+    core.run(server).unwrap()
   }
 }
 
 /// ConnHandler manages the single routing request
 struct ConnHandler {
-  route: Uri,
-  client: Client<client::HttpConnector, Body>
+  client: Client<client::HttpConnector, Body>,
+  routes: HashMap<String, Uri>
 }
 
 /// ConnHandler implementation
@@ -112,7 +115,19 @@ impl Service for ConnHandler {
   ///
   /// * `req`: server request
   fn call(&self, req: server::Request) -> Self::Future {
-    let request = self.build_request(req, self.route.clone());
+    // get 
+    let address = match self.routes.get(req.path()) {
+      None => {
+        println!("Path {} not defined in configuration. Returning 404...", req.path());
+
+        let mut resp = server::Response::new();
+        resp.set_status(StatusCode::NotFound);
+        return Box::new(future::ok(resp));
+      },
+      Some(uri) => uri.clone()
+    };
+
+    let request = self.build_request(req, address);
     println!("Request: \n{:?}", request);
 
     // make a request to the defined route

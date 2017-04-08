@@ -20,7 +20,7 @@ pub struct TomlConfig {
 #[derive(Debug, Clone)]
 pub struct Config {
   pub proxy: ProxyConfig,
-  pub routes: Vec<Uri>
+  pub routes: HashMap<String, Uri>
 }
 
 impl Config {
@@ -37,13 +37,14 @@ impl Config {
   }
 
   fn parse_uris(toml_config: TomlConfig) -> Result<Config, Error> {
-    let mut parsed_routes: Vec<Uri> = Vec::new();
-    for (_, url) in toml_config.routes.iter() {
+    let mut parsed_routes: HashMap<String, Uri> = HashMap::new();
+    for (path, url) in toml_config.routes.iter() {
+      println!("path {}, url {}", path, url);
       if Config::is_valid(url) {
         match url.parse::<Uri>() {
           Err(err) => return Err(Error::new(ErrorKind::InvalidData, err)),
-          Ok(u) => parsed_routes.push(u)
-        }
+          Ok(u) => parsed_routes.insert(path.to_owned(), u)
+        };
       } else {
         println!("The url '{}' is not valid. It won't be included on the routes...", url);
       }
