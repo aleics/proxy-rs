@@ -39,6 +39,12 @@ impl Proxy {
 
   /// Start the proxy server
   pub fn start(&self) {
+    // read the address from the configuration file and listen to it
+    let address = match self.config.proxy.address.as_str().parse::<SocketAddr>() {
+      Err(_) => panic!("Not valid listening address '{}': ", self.config.proxy.address),
+      Ok(a) => a
+    };
+
     // initialize the core tokio instance
     let mut core = match Core::new() {
       Err(err) => panic!("Couldn't initialize the core instance:  {}", err),
@@ -46,32 +52,25 @@ impl Proxy {
     };
     let handle = core.handle();
 
-    // read the address from the configuration file and listen to it
-    let address = match self.config.proxy.address.as_str().parse::<SocketAddr>() {
-      Err(_) => panic!("Not valid listening address '{}': ", self.config.proxy.address),
-      Ok(a) => a
-    };
     let listener: TcpListener = match TcpListener::bind(&address, &handle) {
       Err(_) => panic!("Couldn't bind listener: {}", self.config.proxy.address),
       Ok(l) => l
     };
 
-    // create a new client and manage all the connections
+    // create a new client and reads incoming connections
     let client = Client::new(&handle);
     let connections = listener.incoming();
-    let server = connections.for_each(|(socket, peer_addr)| {
+    let protocol = Http::new();;
 
-      // Here the connection needs to be  asynchronous and iterate through all the routes
-      let routes = self.config.routes.clone();
-      for route in routes {
-        let conn = ConnHandler { route: route.clone(), client: client.clone() };
-        println!("Handling '{}'...", route);
-      }
+    // manage connections concurrently as a stream
+    let server = connections.for_each(|(socket, peer_addr)| {
+      let conn = ConnHandler { route: self.config.routes[0].clone(), client: client.clone() };
+      protocol.bind_connection(&handle, socket, peer_addr, conn);
       Ok(())
     });
 
     // run the server
-    core.run(server).unwrap()
+    core.run(server).unwrap();
   }
 }
 
@@ -89,9 +88,9 @@ impl ConnHandler {
   /// # Arguments
   ///
   /// * `req`: server request
-  pub fn build_request(&self, req: server::Request) -> client::Request {
+  pub fn build_request(&self, req: server::Request, route: Uri) -> client::Request {
     let (method, _, version, headers, body) = req.deconstruct();
-    let mut request = hyper::client::Request::new(method, self.route.clone());
+    let mut request = hyper::client::Request::new(method, route);
     request.set_body(body);
     request.set_version(version);
     *request.headers_mut() = headers;
@@ -113,17 +112,18 @@ impl Service for ConnHandler {
   ///
   /// * `req`: server request
   fn call(&self, req: server::Request) -> Self::Future {
-    let request = self.build_request(req);
+    let request = self.build_request(req, self.route.clone());
+    println!("Request: \n{:?}", request);
 
     // make a request to the defined route
-    let response = self.client.request(request).map(|res| {
+    Box::new(self.client.request(request).map(|res| {
+      println!("Response: \n{:?}", res);
       // create a server response from the client response
-      let mut resp = server::Response::new();
+      let mut resp = server::Response::<Body>::new();
       resp = resp.with_headers(res.headers().clone());
       resp.set_status(res.status().clone());
       resp.set_body(res.body());
       resp
-    });
-    Box::new(response)
+    }))
   }
 }

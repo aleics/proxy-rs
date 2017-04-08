@@ -8,6 +8,7 @@ extern crate tokio_core;
 extern crate tokio_io;
 extern crate tokio_service;
 extern crate hyper;
+extern crate url;
 
 pub mod proxy;
 mod config;

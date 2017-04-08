@@ -4,6 +4,7 @@ use std::fs::File;
 
 use hyper::Uri;
 use toml;
+use url::Url;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ProxyConfig {
@@ -38,14 +39,25 @@ impl Config {
   fn parse_uris(toml_config: TomlConfig) -> Result<Config, Error> {
     let mut parsed_routes: Vec<Uri> = Vec::new();
     for (_, url) in toml_config.routes.iter() {
-      match url.parse::<Uri>() {
-        Err(err) => return Err(Error::new(ErrorKind::InvalidData, err)),
-        Ok(u) => parsed_routes.push(u)
+      if Config::is_valid(url) {
+        match url.parse::<Uri>() {
+          Err(err) => return Err(Error::new(ErrorKind::InvalidData, err)),
+          Ok(u) => parsed_routes.push(u)
+        }
+      } else {
+        println!("The url '{}' is not valid. It won't be included on the routes...", url);
       }
     }
     Ok(Config {
       proxy: toml_config.proxy,
       routes: parsed_routes
     })
+  }
+
+  fn is_valid(uri: &String) -> bool {
+    match Url::parse(uri) {
+      Ok(_) => true,
+      Err(_) => false
+    }
   }
 }
