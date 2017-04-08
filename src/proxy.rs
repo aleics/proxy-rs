@@ -63,7 +63,7 @@ impl Proxy {
 
     // manage connections concurrently as a stream
     let server = connections.for_each(|(socket, peer_addr)| {
-      let conn = ConnHandler { client: client.clone(), routes: self.config.routes.clone() };
+      let conn = ProxyService { client: client.clone(), routes: self.config.routes.clone() };
 
       // bind the connection
       protocol.bind_connection(&handle, socket, peer_addr, conn);
@@ -75,14 +75,14 @@ impl Proxy {
   }
 }
 
-/// ConnHandler manages the single routing request
-struct ConnHandler {
+/// ProxyService manages the single routing request
+struct ProxyService {
   client: Client<client::HttpConnector, Body>,
   routes: HashMap<String, Uri>
 }
 
-/// ConnHandler implementation
-impl ConnHandler {
+/// ProxyService implementation
+impl ProxyService {
 
   /// Build a request from a server request to a client request
   ///
@@ -100,8 +100,8 @@ impl ConnHandler {
 }
 
 
-/// Service implementation for ConnHandler
-impl Service for ConnHandler {
+/// Service implementation for ProxyService
+impl Service for ProxyService {
     type Request =  server::Request;
     type Response = server::Response;
     type Error = hyper::Error;
@@ -126,11 +126,11 @@ impl Service for ConnHandler {
     };
 
     let request = self.build_request(req, address);
-    println!("Request: \n{:?}", request);
+    println!("{:?}", request);
 
     // make a request to the defined route
     Box::new(self.client.request(request).map(|res| {
-      println!("Response: \n{:?}", res);
+      println!("{:?}", res);
       // create a server response from the client response
       let mut resp = server::Response::<Body>::new();
       resp = resp.with_headers(res.headers().clone());
