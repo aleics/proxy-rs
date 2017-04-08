@@ -4,14 +4,13 @@ version = "0.1.0"
 authors = ["aleics <aleics.casanovas@gmail.com>"]
 
 [dependencies]
+clap = "2.23.1"
+futures = "0.1"
 hyper = { "git" = "https://github.com/hyperium/hyper.git" }
-toml = "0.3"
 serde = "0.9"
 serde_derive = "0.9"
-futures = "0.1"
 tokio-core = "0.1"
-tokio-tls = "0.1"
 tokio-io = "0.1.1"
 tokio-service = "0.1"
-clap = "2.23.1"
+toml = "0.3"
 url = "1.4.0"
