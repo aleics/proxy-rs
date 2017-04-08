@@ -7,7 +7,6 @@ use tokio_core::reactor::Core;
 use tokio_core::net::TcpListener;
 
 use futures::{future, Future, Stream};
-use futures_cpupool::CpuPool;
 
 use hyper;
 use hyper::Uri;
@@ -17,8 +16,7 @@ use hyper::server::{Service, Http};
 #[derive(Clone)]
 /// Proxy initialize the proxy server given a configuration and a multithread pool instance
 pub struct Proxy {
-  pub config: Config,
-  pool: CpuPool
+  pub config: Config
 }
 
 /// Implementation for Proxy
@@ -30,12 +28,12 @@ impl Proxy {
   ///
   /// * `config_path`: path of the configuration file
   /// * `threads`: number of threads for the pool instance
-  pub fn new(config_path: &str, threads: usize) -> Proxy {
+  pub fn new(config_path: &str) -> Proxy {
     let config = match Config::read(config_path) {
       Err(err) => panic!("Error: {}", err),
       Ok(c) => c
     };
-    Proxy { config: config, pool: CpuPool::new(threads) }
+    Proxy { config: config }
   }
 
   /// Start the proxy server

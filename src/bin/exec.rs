@@ -17,7 +17,7 @@ fn main() {
 
   let config = matches.value_of("config").unwrap();
 
-  let proxy = Proxy::new(config, 10);
+  let proxy = Proxy::new(config);
   println!("{:?}", proxy.config);
 
   proxy.start();
