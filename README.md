@@ -1,2 +1,2 @@
-# multiproxy
-A multi-thread proxy written in Rust
+# proxy-rs
+A little proxy written in Rust
