@@ -1,9 +1,8 @@
 use config::Config;
 
-use std::collections::HashMap;
 use std::net::SocketAddr;
 
-use tokio_core::reactor::Core;
+use tokio_core::reactor::{Core, Handle};
 use tokio_core::net::TcpListener;
 
 use futures::{future, Future, Stream};
@@ -12,6 +11,8 @@ use hyper;
 use hyper::Uri;
 use hyper::{Client, Body, client, server, StatusCode};
 use hyper::server::{Service, Http};
+
+use hyper_tls::HttpsConnector;
 
 #[derive(Clone)]
 /// Proxy initialize the proxy server given a configuration and a multithread pool instance
@@ -39,7 +40,7 @@ impl Proxy {
   /// Start the proxy server
   pub fn start(&self) {
     // read the address from the configuration file and listen to it
-    let address = match self.config.proxy.address.as_str().parse::<SocketAddr>() {
+    let address: SocketAddr = match self.config.proxy.address.as_str().parse() {
       Err(_) => panic!("Not valid listening address '{}': ", self.config.proxy.address),
       Ok(a) => a
     };
@@ -56,14 +57,13 @@ impl Proxy {
       Ok(l) => l
     };
 
-    // create a new client and reads incoming connections
-    let client = Client::new(&handle);
+    // Reads incoming connections
     let connections = listener.incoming();
     let protocol = Http::new();;
 
     // manage connections concurrently as a stream
     let server = connections.for_each(|(socket, peer_addr)| {
-      let conn = ProxyService { client: client.clone(), routes: self.config.routes.clone() };
+      let conn = ProxyService { handle: handle.clone(), config: self.config.clone() };
 
       // bind the connection
       protocol.bind_connection(&handle, socket, peer_addr, conn);
@@ -75,10 +75,22 @@ impl Proxy {
   }
 }
 
+/// Check if function is tls
+///
+  /// # Arguments
+  ///
+  /// * `uri`: uri
+pub fn is_tls(uri: &Uri) -> bool {
+  match uri.scheme() {
+    None => false,
+    Some(scheme) => scheme == "https"
+  }
+}
+
 /// ProxyService manages the single routing request
 struct ProxyService {
-  client: Client<client::HttpConnector, Body>,
-  routes: HashMap<String, Uri>
+  handle: Handle,
+  config: Config
 }
 
 /// ProxyService implementation
@@ -113,8 +125,8 @@ impl Service for ProxyService {
   ///
   /// * `req`: server request
   fn call(&self, req: server::Request) -> Self::Future {
-    // get 
-    let address = match self.routes.get(req.path()) {
+    // get
+    let address = match self.config.routes.get(req.path()) {
       None => {
         println!("Path {} not defined in configuration. Returning 404...", req.path());
 
@@ -125,18 +137,40 @@ impl Service for ProxyService {
       Some(uri) => uri.clone()
     };
 
-    let request = self.build_request(req, address);
+    let request = self.build_request(req, address.clone());
     println!("{:?}", request);
 
-    // make a request to the defined route
-    Box::new(self.client.request(request).map(|res| {
-      println!("{:?}", res);
-      // create a server response from the client response
-      let mut resp = server::Response::<Body>::new();
-      resp = resp.with_headers(res.headers().clone());
-      resp.set_status(res.status().clone());
-      resp.set_body(res.body());
-      resp
-    }))
+    // Manage properly if route is tls
+    match is_tls(&address) {
+      true => {
+        // create client
+        let client = Client::configure()
+          .connector(HttpsConnector::new(4, &self.handle))
+          .build(&self.handle);
+
+        // make a request to the defined route
+        Box::new(client.request(request).map(|res| {
+          println!("{:?}", res);
+          let mut resp = server::Response::<Body>::new();
+          resp = resp.with_headers(res.headers().clone());
+          resp.set_status(res.status().clone());
+          resp.set_body(res.body());
+          resp
+        }))
+      }, false => {
+        // create client
+        let client = Client::new(&self.handle);
+        // make a request to the defined route
+        Box::new(client.request(request).map(|res| {
+          println!("{:?}", res);
+          // create a server response from the client response
+          let mut resp = server::Response::new();
+          resp = resp.with_headers(res.headers().clone());
+          resp.set_status(res.status().clone());
+          resp.set_body(res.body());
+          resp
+        }))
+      }
+    }
   }
 }

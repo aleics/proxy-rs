@@ -1,5 +1,6 @@
 extern crate futures;
 extern crate hyper;
+extern crate hyper_tls;
 #[macro_use]
 extern crate serde_derive;
 extern crate tokio_core;

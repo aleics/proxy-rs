@@ -4,3 +4,4 @@ address = "127.0.0.1:1234"
 [routes]
 "/site" = "http://foo.com/blah_blah"
 "/app" = "http://www.example.com/wpstyle/?p=364"
+"/app-tls" = "https://www.example.com/wpstyle/?p=364"
